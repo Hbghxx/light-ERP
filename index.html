@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>轻量级 ERP 管理系统</title>
+    <!-- Element Plus 样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <!-- Vue 3 & Element Plus & Axios JS -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f7fa; }
+        .card-header-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .box-card { margin-bottom: 20px; }
+        .main-tabs { background: #fff; padding: 15px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-container>
+        <el-header style="text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px;">
+            轻量级 ERP 管理系统控制台
+        </el-header>
+        <el-main>
+            <!-- 顶部同级标签页面板 -->
+            <el-tabs v-model="activeTab" type="border-card" class="main-tabs">
+
+                <!-- 页签 1：商品管理 -->
+                <el-tab-pane label="商品管理" name="product">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">商品列表</span>
+                        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                            <el-switch v-model="hideZeroStock" active-text="隐藏库存≤0商品"></el-switch>
+                            <el-input v-model="productSearchKeyword" placeholder="搜索 ID / SKU / 商品名称" clearable style="width: 220px;"></el-input>
+                            <el-button type="success" size="small" @click="addDialogVisible = true">新增商品</el-button>
+                            <el-button type="primary" size="small" @click="loadProducts">刷新商品</el-button>
+                        </div>
+                    </div>
+                    <el-table :data="filteredProducts" border style="width: 100%">
+                        <el-table-column prop="id" label="ID" width="90" sortable></el-table-column>
+                        <el-table-column prop="sku" label="商品 SKU" width="140"></el-table-column>
+                        <el-table-column prop="name" label="商品名称" sortable></el-table-column>
+                        <el-table-column prop="price" label="基础售价 (元)" width="140" sortable></el-table-column>
+                        <el-table-column prop="stockQty" label="实时库存" width="120" sortable>
+                            <template #default="scope">
+                                <el-tag :type="scope.row.stockQty > 0 ? 'success' : 'danger'">{{ scope.row.stockQty ?? 0 }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="stockUpdatedAt" label="库存更新时间" width="180" sortable>
+                            <template #default="scope">{{ scope.row.stockUpdatedAt ? scope.row.stockUpdatedAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="createdAt" label="创建时间" width="180" sortable>
+                            <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="120">
+                            <template #default="scope">
+                                <el-button size="small" type="warning" @click="openPriceDialog(scope.row)">修改售价</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <!-- 页签 2：采购入库记录 -->
+                <el-tab-pane label="采购入库记录" name="inbound">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">采购入库流水</span>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <el-input v-model="inboundSearchKeyword" placeholder="搜索单号 / SKU / 供应商" clearable style="width: 250px;"></el-input>
+                            <el-button type="primary" size="small" @click="loadInboundList">刷新列表</el-button>
+                        </div>
+                    </div>
+                    <el-table :data="filteredInboundList" border style="width: 100%">
+                        <el-table-column prop="id" label="ID" width="80" sortable></el-table-column>
+                        <el-table-column prop="inboundNo" label="入库单号" width="200"></el-table-column>
+                        <el-table-column prop="productSku" label="商品 SKU" width="140"></el-table-column>
+                        <el-table-column prop="quantity" label="采购数量" width="120" sortable></el-table-column>
+                        <el-table-column prop="supplierName" label="供应商名称">
+                            <template #default="scope">{{ scope.row.supplierName || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="createdAt" label="入库时间" width="180" sortable>
+                            <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <!-- 页签 3：销售出库记录 -->
+                <el-tab-pane label="销售出库记录" name="outbound">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">销售出库流水</span>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <el-input v-model="outboundSearchKeyword" placeholder="搜索单号 / SKU / 客户名称" clearable style="width: 250px;"></el-input>
+                            <el-button type="primary" size="small" @click="loadOutboundList">刷新列表</el-button>
+                        </div>
+                    </div>
+                    <el-table :data="filteredOutboundList" border style="width: 100%">
+                        <el-table-column prop="id" label="ID" width="80" sortable></el-table-column>
+                        <el-table-column prop="outboundNo" label="出库单号" width="200"></el-table-column>
+                        <el-table-column prop="productSku" label="商品 SKU" width="140"></el-table-column>
+                        <el-table-column prop="quantity" label="出库数量" width="120" sortable></el-table-column>
+                        <el-table-column prop="customerName" label="客户名称">
+                            <template #default="scope">{{ scope.row.customerName || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="createdAt" label="出库时间" width="180" sortable>
+                            <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+            </el-tabs>
+
+            <!-- 2. 进销存快捷操作快捷卡片 -->
+            <el-row :gutter="20">
+                <el-col :span="8">
+                    <el-card class="box-card">
+                        <template #header><div style="font-weight: bold;">采购入库操作</div></template>
+                        <el-form label-width="90px">
+                            <el-form-item label="商品 SKU"><el-input v-model="inbound.sku" placeholder="例: SKU-1001"></el-input></el-form-item>
+                            <el-form-item label="入库数量"><el-input-number v-model="inbound.qty" :min="1"></el-input-number></el-form-item>
+                            <el-form-item label="供应商"><el-input v-model="inbound.supplierName" placeholder="选填"></el-input></el-form-item>
+                            <el-button type="primary" style="width: 100%;" @click="handleInbound">提交入库</el-button>
+                        </el-form>
+                    </el-card>
+                </el-col>
+
+                <el-col :span="8">
+                    <el-card class="box-card">
+                        <template #header><div style="font-weight: bold;">销售出库操作</div></template>
+                        <el-form label-width="90px">
+                            <el-form-item label="商品 SKU"><el-input v-model="outbound.sku" placeholder="例: SKU-1001"></el-input></el-form-item>
+                            <el-form-item label="出库数量"><el-input-number v-model="outbound.qty" :min="1"></el-input-number></el-form-item>
+                            <el-form-item label="客户名称"><el-input v-model="outbound.customerName" placeholder="选填"></el-input></el-form-item>
+                            <el-button type="warning" style="width: 100%;" @click="handleOutbound">提交出库</el-button>
+                        </el-form>
+                    </el-card>
+                </el-col>
+
+                <el-col :span="8">
+                    <el-card class="box-card">
+                        <template #header><div style="font-weight: bold;">乐观锁扣减 (直扣)</div></template>
+                        <el-form label-width="90px">
+                            <el-form-item label="商品 SKU"><el-input v-model="deduct.sku" placeholder="例: SKU-1001"></el-input></el-form-item>
+                            <el-form-item label="扣减数量"><el-input-number v-model="deduct.qty" :min="1"></el-input-number></el-form-item>
+                            <el-button type="danger" style="width: 100%;" @click="handleDeduct">直接扣减库存</el-button>
+                        </el-form>
+                    </el-card>
+                </el-col>
+            </el-row>
+
+            <!-- 弹窗：新增商品 -->
+            <el-dialog v-model="addDialogVisible" title="新增商品主数据" width="400px">
+                <el-form label-width="80px">
+                    <el-form-item label="SKU"><el-input v-model="newProduct.sku"></el-input></el-form-item>
+                    <el-form-item label="名称"><el-input v-model="newProduct.name"></el-input></el-form-item>
+                    <el-form-item label="价格"><el-input-number v-model="newProduct.price" :precision="2" :step="0.1"></el-input-number></el-form-item>
+                </el-form>
+                <template #footer>
+                    <el-button @click="addDialogVisible = false">取消</el-button>
+                    <el-button type="primary" @click="handleAddProduct">确定</el-button>
+                </template>
+            </el-dialog>
+
+            <!-- 弹窗：修改价格 -->
+            <el-dialog v-model="priceDialogVisible" title="修改商品售价" width="400px">
+                <el-form label-width="80px">
+                    <el-form-item label="SKU"><el-input v-model="updatePriceForm.sku" disabled></el-input></el-form-item>
+                    <el-form-item label="新价格"><el-input-number v-model="updatePriceForm.price" :precision="2" :step="1"></el-input-number></el-form-item>
+                </el-form>
+                <template #footer>
+                    <el-button @click="priceDialogVisible = false">取消</el-button>
+                    <el-button type="primary" @click="handleUpdatePrice">保存</el-button>
+                </template>
+            </el-dialog>
+        </el-main>
+    </el-container>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+    const API_BASE = 'http://localhost:8080';
+
+    createApp({
+        setup() {
+            const activeTab = ref('product');
+            const products = ref([]);
+            const inboundList = ref([]);
+            const outboundList = ref([]);
+
+            const hideZeroStock = ref(false);
+            const productSearchKeyword = ref('');
+            const inboundSearchKeyword = ref('');
+            const outboundSearchKeyword = ref('');
+
+            const addDialogVisible = ref(false);
+            const priceDialogVisible = ref(false);
+
+            const newProduct = ref({ sku: '', name: '', price: 0.00 });
+            const updatePriceForm = ref({ sku: '', price: 0.00 });
+            const inbound = ref({ sku: '', qty: 1, supplierName: '' });
+            const outbound = ref({ sku: '', qty: 1, customerName: '' });
+            const deduct = ref({ sku: '', qty: 1 });
+
+            // 计算属性：筛选商品
+            const filteredProducts = computed(() => {
+                return products.value.filter(item => {
+                    if (hideZeroStock.value && (item.stockQty || 0) <= 0) return false;
+                    if (productSearchKeyword.value) {
+                        const kw = productSearchKeyword.value.toLowerCase().trim();
+                        return String(item.id || '').toLowerCase().includes(kw) ||
+                            String(item.sku || '').toLowerCase().includes(kw) ||
+                            String(item.name || '').toLowerCase().includes(kw);
+                    }
+                    return true;
+                });
+            });
+
+            // 计算属性：筛选采购记录
+            const filteredInboundList = computed(() => {
+                if (!inboundSearchKeyword.value) return inboundList.value;
+                const kw = inboundSearchKeyword.value.toLowerCase().trim();
+                return inboundList.value.filter(item =>
+                    String(item.inboundNo || '').toLowerCase().includes(kw) ||
+                    String(item.productSku || '').toLowerCase().includes(kw) ||
+                    String(item.supplierName || '').toLowerCase().includes(kw)
+                );
+            });
+
+            // 计算属性：筛选销售记录
+            const filteredOutboundList = computed(() => {
+                if (!outboundSearchKeyword.value) return outboundList.value;
+                const kw = outboundSearchKeyword.value.toLowerCase().trim();
+                return outboundList.value.filter(item =>
+                    String(item.outboundNo || '').toLowerCase().includes(kw) ||
+                    String(item.productSku || '').toLowerCase().includes(kw) ||
+                    String(item.customerName || '').toLowerCase().includes(kw)
+                );
+            });
+
+            // 加载方法
+            const loadProducts = () => {
+                axios.get(`${API_BASE}/product/list`).then(res => products.value = res.data);
+            };
+            const loadInboundList = () => {
+                axios.get(`${API_BASE}/inbound/list`).then(res => inboundList.value = res.data);
+            };
+            const loadOutboundList = () => {
+                axios.get(`${API_BASE}/outbound/list`).then(res => outboundList.value = res.data);
+            };
+
+            const refreshAll = () => {
+                loadProducts();
+                loadInboundList();
+                loadOutboundList();
+            };
+
+            // 操作方法
+            const handleAddProduct = () => {
+                axios.post(`${API_BASE}/product/add`, new URLSearchParams(newProduct.value)).then(res => {
+                    ElementPlus.ElMessage.success(res.data);
+                    addDialogVisible.value = false;
+                    loadProducts();
+                });
+            };
+
+            const openPriceDialog = (row) => {
+                updatePriceForm.value.sku = row.sku;
+                updatePriceForm.value.price = row.price;
+                priceDialogVisible.value = true;
+            };
+
+            const handleUpdatePrice = () => {
+                axios.post(`${API_BASE}/product/updatePrice`, new URLSearchParams(updatePriceForm.value)).then(res => {
+                    ElementPlus.ElMessage.success(res.data);
+                    priceDialogVisible.value = false;
+                    loadProducts();
+                });
+            };
+
+            const handleInbound = () => {
+                axios.post(`${API_BASE}/inbound/create`, new URLSearchParams(inbound.value)).then(res => {
+                    ElementPlus.ElMessage.success(res.data);
+                    refreshAll();
+                });
+            };
+
+            const handleOutbound = () => {
+                axios.post(`${API_BASE}/outbound/create`, new URLSearchParams(outbound.value)).then(res => {
+                    ElementPlus.ElMessage.success(res.data);
+                    refreshAll();
+                }).catch(err => ElementPlus.ElMessage.error('出库失败'));
+            };
+
+            const handleDeduct = () => {
+                axios.post(`${API_BASE}/stock/deduct`, new URLSearchParams(deduct.value)).then(res => {
+                    ElementPlus.ElMessage.info(res.data);
+                    loadProducts();
+                });
+            };
+
+            onMounted(() => {
+                refreshAll();
+            });
+
+            return {
+                activeTab, products, inboundList, outboundList, hideZeroStock,
+                productSearchKeyword, inboundSearchKeyword, outboundSearchKeyword,
+                filteredProducts, filteredInboundList, filteredOutboundList,
+                addDialogVisible, priceDialogVisible, newProduct, updatePriceForm,
+                inbound, outbound, deduct, loadProducts, loadInboundList, loadOutboundList,
+                handleAddProduct, openPriceDialog, handleUpdatePrice, handleInbound, handleOutbound, handleDeduct
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
