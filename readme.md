@@ -1,6 +1,3 @@
-已将数据库设计与建表 DDL 脚本完整集成至 `README.md` 中，你可以直接复制以下完整内容替换本地的 `readme.md` 文件：
-
-```markdown
 # 轻量级 ERP 管理系统
 
 基于 Spring Boot + MyBatis + MySQL 构建后端 API，配合 Vue 3 + Element Plus 单文件 (HTML) 构建极简无构建依赖前端界面的轻量级 ERP 进销存管理系统。
@@ -186,14 +183,3 @@ const filteredProducts = computed(() => {
 4. **运行前端**：无需任何 npm 或 Node.js 环境，直接使用浏览器打开 `index.html` 即可访问。
 
 ---
-
-## 📈 优化方向与后续拓展建议
-
-* **分页与服务端过滤**：当前前端做全内存过滤与排序，若数据量突破万条，建议在后端 Mapper 中增加 `LIMIT` 分页以及 MyBatis 动态 SQL（`<where>` / `<if>`）。
-* **数据库索引**：针对高频查询与关联字段（如 `product_sku`、`inbound_no`、`outbound_no`）建立唯一索引或普通索引，提高联表速度。
-* **权限控制**：结合 Spring Security / Sa-Token 以及 Vue Router 实现多角色登录与权限控制（采购员、销售员、仓库管理员）。
-* **前端工程化**：数据规模扩大后，建议将单文件 HTML 迁移至 Vite + Vue 3 + TypeScript 的标准工程化架构。
-
-```
-
-```
