@@ -1,3 +1,6 @@
+已将数据库设计与建表 DDL 脚本完整集成至 `README.md` 中，你可以直接复制以下完整内容替换本地的 `readme.md` 文件：
+
+```markdown
 # 轻量级 ERP 管理系统
 
 基于 Spring Boot + MyBatis + MySQL 构建后端 API，配合 Vue 3 + Element Plus 单文件 (HTML) 构建极简无构建依赖前端界面的轻量级 ERP 进销存管理系统。
@@ -33,6 +36,58 @@
 ### 4. 库存扣减模块 (Stock Control)
 
 * 提供底层乐观锁直扣/扣减测试接口，防超卖与并发控制。
+
+---
+
+## 🗄️ 数据库结构设计
+
+系统使用 MySQL 数据库，包含商品主表、实时库存表（乐观锁）、采购入库表及销售出库表：
+
+```sql
+CREATE DATABASE IF NOT EXISTS erp DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE erp;
+
+-- 1. 商品主数据表
+CREATE TABLE IF NOT EXISTS product_info (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '商品ID',
+    sku VARCHAR(50) NOT NULL UNIQUE COMMENT '商品SKU编码',
+    name VARCHAR(100) NOT NULL COMMENT '商品名称',
+    price DECIMAL(10, 2) NOT NULL DEFAULT 0.00 COMMENT '基础售价',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP() COMMENT '创建时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品主表';
+
+-- 2. 实时库存表 (含乐观锁控制)
+CREATE TABLE IF NOT EXISTS inventory_stock (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    product_sku VARCHAR(50) NOT NULL UNIQUE COMMENT '关联商品SKU',
+    stock_qty INT NOT NULL DEFAULT 0 COMMENT '当前可用库存量',
+    version INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP() COMMENT '更新时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存表';
+
+-- 3. 采购入库流水表
+CREATE TABLE IF NOT EXISTS purchase_inbound (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '入库单ID',
+    inbound_no VARCHAR(50) NOT NULL UNIQUE COMMENT '采购入库单号',
+    product_sku VARCHAR(50) NOT NULL COMMENT '商品SKU',
+    quantity INT NOT NULL COMMENT '采购数量',
+    supplier_name VARCHAR(100) COMMENT '供应商名称',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态: 1-已入库',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP() COMMENT '入库时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购入库记录';
+
+-- 4. 销售出库流水表
+CREATE TABLE IF NOT EXISTS sales_outbound (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '出库单ID',
+    outbound_no VARCHAR(50) NOT NULL UNIQUE COMMENT '销售出库单号',
+    product_sku VARCHAR(50) NOT NULL COMMENT '商品SKU',
+    quantity INT NOT NULL COMMENT '销售出库数量',
+    customer_name VARCHAR(100) COMMENT '客户名称',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态: 1-已出库',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP() COMMENT '出库时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售出库记录';
+
+```
 
 ---
 
@@ -126,9 +181,9 @@ const filteredProducts = computed(() => {
 ## 🚀 部署与使用指南
 
 1. **环境准备**：安装 JDK 17+、MySQL 8.0。
-2. **初始化数据库**：新建 `erp` 数据库，创建 `product_info`, `inventory_stock`, `purchase_inbound`, `sales_outbound` 等数据表。
-3. **启动后端**：配置 `application.properties` 中的数据库账号密码后，启动 `ErpApplication.java`。
-4. **运行前端**：直接用浏览器双击打开 `index.html` 即可使用系统，无须任何依赖安装与 npm 构建。
+2. **初始化数据库**：在 MySQL 中运行上述 **数据库结构设计** 章节中的 DDL 脚本，自动创建 `erp` 数据库及表结构。
+3. **启动后端**：修改 `application.properties` 中的数据库账号与密码，启动 `ErpApplication.java`。
+4. **运行前端**：无需任何 npm 或 Node.js 环境，直接使用浏览器打开 `index.html` 即可访问。
 
 ---
 
@@ -138,3 +193,7 @@ const filteredProducts = computed(() => {
 * **数据库索引**：针对高频查询与关联字段（如 `product_sku`、`inbound_no`、`outbound_no`）建立唯一索引或普通索引，提高联表速度。
 * **权限控制**：结合 Spring Security / Sa-Token 以及 Vue Router 实现多角色登录与权限控制（采购员、销售员、仓库管理员）。
 * **前端工程化**：数据规模扩大后，建议将单文件 HTML 迁移至 Vite + Vue 3 + TypeScript 的标准工程化架构。
+
+```
+
+```
