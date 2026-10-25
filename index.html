@@ -19,8 +19,13 @@
 <body>
 <div id="app">
     <el-container>
-        <el-header style="text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px;">
-            轻量级 ERP 管理系统控制台
+        <el-header style="display: flex; align-items: center; justify-content: center; position: relative; font-size: 24px; font-weight: bold; margin-bottom: 20px;">
+            <span>轻量级 ERP 管理系统控制台</span>
+            <div style="position: absolute; right: 0; font-size: 14px; font-weight: normal; display: flex; gap: 10px; align-items: center;">
+                <span>{{ me.realName }}（{{ dataScopeName }}）</span>
+                <el-button size="small" @click="openPwdDialog">改密</el-button>
+                <el-button size="small" type="danger" plain @click="logout">退出</el-button>
+            </div>
         </el-header>
         <el-main>
             <!-- 顶部同级标签页面板 -->
@@ -33,7 +38,7 @@
                         <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                             <el-switch v-model="hideZeroStock" active-text="隐藏库存≤0商品"></el-switch>
                             <el-input v-model="productSearchKeyword" placeholder="搜索 ID / SKU / 商品名称" clearable style="width: 220px;"></el-input>
-                            <el-button type="success" size="small" @click="addDialogVisible = true">新增商品</el-button>
+                            <el-button type="success" size="small" v-if="can('product:add')" @click="addDialogVisible = true">新增商品</el-button>
                             <el-button type="primary" size="small" @click="loadProducts">刷新商品</el-button>
                         </div>
                     </div>
@@ -55,7 +60,7 @@
                         </el-table-column>
                         <el-table-column label="操作" width="120">
                             <template #default="scope">
-                                <el-button size="small" type="warning" @click="openPriceDialog(scope.row)">修改售价</el-button>
+                                <el-button size="small" type="warning" v-if="can('product:price:update')" @click="openPriceDialog(scope.row)">修改售价</el-button>
                             </template>
                         </el-table-column>
                     </el-table>
@@ -75,11 +80,28 @@
                         <el-table-column prop="inboundNo" label="入库单号" width="200"></el-table-column>
                         <el-table-column prop="productSku" label="商品 SKU" width="140"></el-table-column>
                         <el-table-column prop="quantity" label="采购数量" width="120" sortable></el-table-column>
+                        <el-table-column prop="unitPrice" label="单价 (元)" width="110">
+                            <template #default="scope">{{ scope.row.unitPrice ?? '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="totalAmount" label="总金额 (元)" width="120" sortable>
+                            <template #default="scope">{{ scope.row.totalAmount ?? '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="status" label="状态" width="90">
+                            <template #default="scope">
+                                <el-tag :type="docStatusTag(scope.row.status)">{{ docStatusName(scope.row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
                         <el-table-column prop="supplierName" label="供应商名称">
                             <template #default="scope">{{ scope.row.supplierName || '-' }}</template>
                         </el-table-column>
                         <el-table-column prop="createdAt" label="入库时间" width="180" sortable>
                             <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="90">
+                            <template #default="scope">
+                                <el-button v-if="canCancel(scope.row)" size="small" type="info" plain
+                                           @click="cancelDoc('inbound', scope.row.id)">作废</el-button>
+                            </template>
                         </el-table-column>
                     </el-table>
                 </el-tab-pane>
@@ -98,11 +120,161 @@
                         <el-table-column prop="outboundNo" label="出库单号" width="200"></el-table-column>
                         <el-table-column prop="productSku" label="商品 SKU" width="140"></el-table-column>
                         <el-table-column prop="quantity" label="出库数量" width="120" sortable></el-table-column>
+                        <el-table-column prop="unitPrice" label="单价 (元)" width="110">
+                            <template #default="scope">{{ scope.row.unitPrice ?? '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="totalAmount" label="总金额 (元)" width="120" sortable>
+                            <template #default="scope">{{ scope.row.totalAmount ?? '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="status" label="状态" width="90">
+                            <template #default="scope">
+                                <el-tag :type="docStatusTag(scope.row.status)">{{ docStatusName(scope.row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
                         <el-table-column prop="customerName" label="客户名称">
                             <template #default="scope">{{ scope.row.customerName || '-' }}</template>
                         </el-table-column>
                         <el-table-column prop="createdAt" label="出库时间" width="180" sortable>
                             <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="90">
+                            <template #default="scope">
+                                <el-button v-if="canCancel(scope.row)" size="small" type="info" plain
+                                           @click="cancelDoc('outbound', scope.row.id)">作废</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <!-- 页签 4：账号管理（需 user:manage 权限） -->
+                <el-tab-pane label="账号管理" name="account" v-if="can('user:manage')">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">账号列表</span>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <el-button type="success" size="small" @click="openCreateUser">新增账号</el-button>
+                            <el-button type="primary" size="small" @click="loadUsers">刷新</el-button>
+                        </div>
+                    </div>
+                    <el-table :data="users" border style="width: 100%">
+                        <el-table-column prop="id" label="ID" width="70"></el-table-column>
+                        <el-table-column prop="username" label="用户名" width="120"></el-table-column>
+                        <el-table-column prop="realName" label="姓名" width="110">
+                            <template #default="scope">{{ scope.row.realName || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="deptName" label="部门" width="140">
+                            <template #default="scope">{{ scope.row.deptName || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="roleNames" label="角色" min-width="160">
+                            <template #default="scope">{{ scope.row.roleNames || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="status" label="状态" width="90">
+                            <template #default="scope">
+                                <el-tag :type="statusTag(scope.row.status)">{{ statusName(scope.row.status) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="lastLoginAt" label="最近登录" width="170">
+                            <template #default="scope">{{ scope.row.lastLoginAt ? scope.row.lastLoginAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="230">
+                            <template #default="scope">
+                                <el-button size="small" type="primary" plain @click="openAssign(scope.row)">分配角色</el-button>
+                                <el-button size="small" type="warning" plain @click="openReset(scope.row)">重置密码</el-button>
+                                <el-button size="small" :type="scope.row.status === 1 ? 'danger' : 'success'" plain @click="toggleStatus(scope.row)">
+                                    {{ scope.row.status === 1 ? '停用' : '恢复' }}
+                                </el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <!-- 页签 5：审批中心（需入库/出库审批权限） -->
+                <el-tab-pane label="审批中心" name="approval" v-if="can('inbound:audit') || can('outbound:audit')">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">待审批单据</span>
+                        <el-button type="primary" size="small" @click="loadPending">刷新</el-button>
+                    </div>
+                    <el-table :data="pendingDocs" border style="width: 100%">
+                        <el-table-column prop="docType" label="类型" width="90">
+                            <template #default="scope">
+                                <el-tag :type="scope.row.docType === 'INBOUND' ? 'success' : 'warning'">
+                                    {{ scope.row.docType === 'INBOUND' ? '入库' : '出库' }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="docNo" label="单号" width="180"></el-table-column>
+                        <el-table-column prop="productSku" label="SKU" width="130"></el-table-column>
+                        <el-table-column prop="quantity" label="数量" width="80"></el-table-column>
+                        <el-table-column prop="totalAmount" label="金额 (元)" width="110"></el-table-column>
+                        <el-table-column prop="applicantName" label="申请人" width="110">
+                            <template #default="scope">{{ scope.row.applicantName || ('用户#' + scope.row.createdBy) }}</template>
+                        </el-table-column>
+                        <el-table-column prop="createdAt" label="提交时间" width="170">
+                            <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column label="操作" width="160">
+                            <template #default="scope">
+                                <el-button size="small" type="success"
+                                           :disabled="!can(scope.row.docType === 'INBOUND' ? 'inbound:audit' : 'outbound:audit')"
+                                           @click="openAudit(scope.row)">通过</el-button>
+                                <el-button size="small" type="danger"
+                                           :disabled="!can(scope.row.docType === 'INBOUND' ? 'inbound:audit' : 'outbound:audit')"
+                                           @click="openAudit(scope.row)">驳回</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <!-- 页签 6：报表（需 report:view 权限） -->
+                <el-tab-pane label="报表" name="report" v-if="can('report:view')">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">近 30 天出入库日报（仅已通过单据）</span>
+                        <el-button type="primary" size="small" @click="loadReports">刷新</el-button>
+                    </div>
+                    <el-table :data="reportDaily" border size="small" style="width: 100%; margin-bottom: 20px;">
+                        <el-table-column prop="day" label="日期" width="130"></el-table-column>
+                        <el-table-column prop="type" label="方向" width="90">
+                            <template #default="scope">
+                                <el-tag :type="scope.row.type === 'IN' ? 'success' : 'warning'">
+                                    {{ scope.row.type === 'IN' ? '入库' : '出库' }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="qty" label="数量合计" width="110"></el-table-column>
+                        <el-table-column prop="amount" label="金额合计 (元)"></el-table-column>
+                    </el-table>
+                    <div style="font-weight: bold; font-size: 16px; margin-bottom: 10px;">库存价值榜（单价 × 库存）</div>
+                    <el-table :data="reportStock" border size="small" style="width: 100%;">
+                        <el-table-column prop="sku" label="SKU" width="140"></el-table-column>
+                        <el-table-column prop="name" label="商品名称"></el-table-column>
+                        <el-table-column prop="price" label="单价 (元)" width="110"></el-table-column>
+                        <el-table-column prop="stockQty" label="库存" width="100"></el-table-column>
+                        <el-table-column prop="stockValue" label="库存价值 (元)" width="140"></el-table-column>
+                    </el-table>
+                </el-tab-pane>
+
+                <!-- 页签 7：审计日志（需 audit:view 权限） -->
+                <el-tab-pane label="审计日志" name="audit" v-if="can('audit:view')">
+                    <div class="card-header-toolbar" style="margin-bottom: 15px;">
+                        <span style="font-weight: bold; font-size: 16px;">关键操作留痕（账号/权限变更、登录）</span>
+                        <el-button type="primary" size="small" @click="loadAudits">刷新</el-button>
+                    </div>
+                    <el-table :data="audits" border style="width: 100%">
+                        <el-table-column prop="id" label="ID" width="80"></el-table-column>
+                        <el-table-column prop="createdAt" label="时间" width="170">
+                            <template #default="scope">{{ scope.row.createdAt ? scope.row.createdAt.replace('T', ' ') : '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="username" label="操作人" width="110">
+                            <template #default="scope">{{ scope.row.username || scope.row.userId }}</template>
+                        </el-table-column>
+                        <el-table-column prop="action" label="动作" width="150"></el-table-column>
+                        <el-table-column prop="docType" label="对象类型" width="100">
+                            <template #default="scope">{{ scope.row.docType || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="detail" label="详情" min-width="260">
+                            <template #default="scope">{{ scope.row.detail || '-' }}</template>
+                        </el-table-column>
+                        <el-table-column prop="ip" label="来源 IP" width="130">
+                            <template #default="scope">{{ scope.row.ip || '-' }}</template>
                         </el-table-column>
                     </el-table>
                 </el-tab-pane>
@@ -117,7 +289,7 @@
                             <el-form-item label="商品 SKU"><el-input v-model="inbound.sku" placeholder="例: SKU-1001"></el-input></el-form-item>
                             <el-form-item label="入库数量"><el-input-number v-model="inbound.qty" :min="1"></el-input-number></el-form-item>
                             <el-form-item label="供应商"><el-input v-model="inbound.supplierName" placeholder="选填"></el-input></el-form-item>
-                            <el-button type="primary" style="width: 100%;" @click="handleInbound">提交入库</el-button>
+                            <el-button type="primary" style="width: 100%;" v-if="can('inbound:create')" @click="handleInbound">提交入库</el-button>
                         </el-form>
                     </el-card>
                 </el-col>
@@ -129,12 +301,12 @@
                             <el-form-item label="商品 SKU"><el-input v-model="outbound.sku" placeholder="例: SKU-1001"></el-input></el-form-item>
                             <el-form-item label="出库数量"><el-input-number v-model="outbound.qty" :min="1"></el-input-number></el-form-item>
                             <el-form-item label="客户名称"><el-input v-model="outbound.customerName" placeholder="选填"></el-input></el-form-item>
-                            <el-button type="warning" style="width: 100%;" @click="handleOutbound">提交出库</el-button>
+                            <el-button type="warning" style="width: 100%;" v-if="can('outbound:create')" @click="handleOutbound">提交出库</el-button>
                         </el-form>
                     </el-card>
                 </el-col>
 
-                <el-col :span="8">
+                <el-col :span="8" v-if="can('stock:deduct')">
                     <el-card class="box-card">
                         <template #header><div style="font-weight: bold;">乐观锁扣减 (直扣)</div></template>
                         <el-form label-width="90px">
@@ -170,13 +342,110 @@
                     <el-button type="primary" @click="handleUpdatePrice">保存</el-button>
                 </template>
             </el-dialog>
+
+            <!-- 弹窗：新增账号（需 user:manage） -->
+            <el-dialog v-model="userDialog" title="新增账号" width="440px">
+                <el-form label-width="80px">
+                    <el-form-item label="用户名"><el-input v-model="newUserForm.username"></el-input></el-form-item>
+                    <el-form-item label="初始密码"><el-input v-model="newUserForm.password" type="password" show-password placeholder="至少 8 位"></el-input></el-form-item>
+                    <el-form-item label="姓名"><el-input v-model="newUserForm.realName"></el-input></el-form-item>
+                    <el-form-item label="部门">
+                        <el-select v-model="newUserForm.deptId" style="width: 100%;">
+                            <el-option v-for="d in deptsAll" :key="d.id" :label="d.name" :value="d.id"></el-option>
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item label="角色">
+                        <el-checkbox-group v-model="newUserForm.roleIds">
+                            <el-checkbox v-for="r in rolesAll" :key="r.id" :value="r.id">{{ r.roleName }}</el-checkbox>
+                        </el-checkbox-group>
+                    </el-form-item>
+                </el-form>
+                <template #footer>
+                    <el-button @click="userDialog = false">取消</el-button>
+                    <el-button type="primary" @click="handleCreateUser">创建</el-button>
+                </template>
+            </el-dialog>
+
+            <!-- 弹窗：分配角色（需 role:assign） -->
+            <el-dialog v-model="assignDialog" :title="'分配角色 - ' + assignForm.username" width="420px">
+                <el-checkbox-group v-model="assignForm.roleIds">
+                    <el-checkbox v-for="r in rolesAll" :key="r.id" :value="r.id">{{ r.roleName }}（{{ r.dataScope }}）</el-checkbox>
+                </el-checkbox-group>
+                <template #footer>
+                    <el-button @click="assignDialog = false">取消</el-button>
+                    <el-button type="primary" @click="handleAssign">保存</el-button>
+                </template>
+            </el-dialog>
+
+            <!-- 弹窗：重置密码 -->
+            <el-dialog v-model="resetDialog" :title="'重置密码 - ' + resetForm.username" width="400px">
+                <el-form label-width="80px">
+                    <el-form-item label="新密码"><el-input v-model="resetForm.newPassword" type="password" show-password placeholder="至少 8 位，重置后需本人改密"></el-input></el-form-item>
+                </el-form>
+                <template #footer>
+                    <el-button @click="resetDialog = false">取消</el-button>
+                    <el-button type="primary" @click="handleReset">确认重置</el-button>
+                </template>
+            </el-dialog>
+
+            <!-- 弹窗：修改密码（首次登录强制） -->
+            <el-dialog v-model="pwdDialogVisible" title="修改密码" width="400px"
+                       :close-on-click-modal="!me.needChangePwd" :show-close="!me.needChangePwd">
+                <el-alert v-if="me.needChangePwd" title="首次登录请先修改密码" type="warning" :closable="false" style="margin-bottom: 12px;"></el-alert>
+                <el-form label-width="90px">
+                    <el-form-item label="原密码"><el-input v-model="pwdForm.oldPassword" type="password" show-password></el-input></el-form-item>
+                    <el-form-item label="新密码"><el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少 8 位"></el-input></el-form-item>
+                    <el-form-item label="确认新密码"><el-input v-model="pwdForm.confirm" type="password" show-password></el-input></el-form-item>
+                </el-form>
+                <template #footer>
+                    <el-button v-if="!me.needChangePwd" @click="pwdDialogVisible = false">取消</el-button>
+                    <el-button type="primary" @click="handleChangePwd">保存并重新登录</el-button>
+                </template>
+            </el-dialog>
+
+            <!-- 弹窗：单据审批（通过/驳回） -->
+            <el-dialog v-model="auditDialogVisible" :title="auditForm.approved ? '通过单据' : '驳回单据'" width="420px">
+                <el-alert v-if="!auditForm.approved" title="驳回必须填写原因，将通知制单人" type="warning" :closable="false" style="margin-bottom: 12px;"></el-alert>
+                <el-form label-width="80px">
+                    <el-form-item label="审批意见">
+                        <el-input v-model="auditForm.opinion" type="textarea" :rows="3"
+                                  :placeholder="auditForm.approved ? '选填' : '必填，例如：库存不足 / 金额有误'"></el-input>
+                    </el-form-item>
+                </el-form>
+                <template #footer>
+                    <el-button @click="auditDialogVisible = false">取消</el-button>
+                    <el-button :type="auditForm.approved ? 'success' : 'danger'" @click="handleAudit">
+                        {{ auditForm.approved ? '确认通过' : '确认驳回' }}
+                    </el-button>
+                </template>
+            </el-dialog>
         </el-main>
     </el-container>
 </div>
 
 <script>
     const { createApp, ref, computed, onMounted } = Vue;
-    const API_BASE = 'http://localhost:8080';
+    // file:// 直接打开时直连本地后端；经 Nginx 托管时走同源相对路径（由 Nginx 反代）
+    const API_BASE = location.protocol === 'file:' ? 'http://localhost:8080' : '';
+
+    // 登录守卫：无 token 一律先去登录页
+    const TOKEN_KEY = 'erp_token';
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) location.href = 'login.html';
+    axios.defaults.headers.common['Authorization'] = 'Bearer ' + (token || '');
+    // 401 统一清票据回登录页
+    axios.interceptors.response.use(
+        res => res,
+        err => {
+            if (err.response && err.response.status === 401) {
+                localStorage.removeItem(TOKEN_KEY);
+                const msg = (err.response.data && err.response.data.message) || '请重新登录';
+                ElementPlus.ElMessage.error(msg);
+                setTimeout(() => location.href = 'login.html', 600);
+            }
+            return Promise.reject(err);
+        }
+    );
 
     createApp({
         setup() {
@@ -198,6 +467,77 @@
             const inbound = ref({ sku: '', qty: 1, supplierName: '' });
             const outbound = ref({ sku: '', qty: 1, customerName: '' });
             const deduct = ref({ sku: '', qty: 1 });
+
+            // ===== 当前用户与权限 =====
+            const me = ref({ realName: '', username: '', dataScope: 'SELF', admin: false, needChangePwd: false });
+            const perms = ref([]);
+            const can = (p) => me.value.admin || perms.value.includes(p);
+            const scopeNames = { ALL: '全部数据', DEPT_AND_CHILD: '本部门及以下', SELF: '仅本人' };
+            const dataScopeName = computed(() => scopeNames[me.value.dataScope] || me.value.dataScope);
+
+            // ===== 账号管理 =====
+            const users = ref([]);
+            const rolesAll = ref([]);
+            const deptsAll = ref([]);
+            const userDialog = ref(false);
+            const newUserForm = ref({ username: '', password: '', realName: '', deptId: null, roleIds: [] });
+            const assignDialog = ref(false);
+            const assignForm = ref({ userId: null, username: '', roleIds: [] });
+            const resetDialog = ref(false);
+            const resetForm = ref({ userId: null, username: '', newPassword: '' });
+
+            // ===== 审计日志 =====
+            const audits = ref([]);
+
+            // ===== 修改密码 =====
+            const pwdDialogVisible = ref(false);
+            const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' });
+
+            // ===== 审批流（阶段6）=====
+            const docStatusName = (s) => ({ 1: '待审批', 2: '已通过', 3: '已驳回', 4: '已作废' }[s] || '未知');
+            const docStatusTag = (s) => ({ 1: 'warning', 2: 'success', 3: 'danger', 4: 'info' }[s] || 'info');
+            const canCancel = (row) => row.status === 1 && (me.value.admin || row.createdBy === me.value.userId);
+            const cancelDoc = (type, id) => {
+                axios.post(`${API_BASE}/${type}/cancel`, new URLSearchParams({ docId: id })).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    type === 'inbound' ? loadInboundList() : loadOutboundList();
+                    loadPending();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '作废失败')));
+            };
+            const pendingDocs = ref([]);
+            const loadPending = () => {
+                axios.get(`${API_BASE}/approval/pending`).then(res => {
+                    const d = res.data.data || {};
+                    pendingDocs.value = [
+                        ...((d.inbound || []).map(x => ({ ...x, docType: 'INBOUND', docNo: x.inboundNo }))),
+                        ...((d.outbound || []).map(x => ({ ...x, docType: 'OUTBOUND', docNo: x.outboundNo })))
+                    ];
+                }).catch(() => {});
+            };
+            const auditDialogVisible = ref(false);
+            const auditForm = ref({ docType: 'INBOUND', docId: null, approved: true, opinion: '' });
+            const openAudit = (row) => {
+                auditForm.value = { docType: row.docType, docId: row.id, approved: true, opinion: '' };
+                auditDialogVisible.value = true;
+            };
+            const handleAudit = () => {
+                const f = auditForm.value;
+                const params = new URLSearchParams({ docId: f.docId, approved: f.approved, opinion: f.opinion || '' });
+                axios.post(`${API_BASE}/${f.docType.toLowerCase()}/audit`, params).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    auditDialogVisible.value = false;
+                    loadPending();
+                    refreshAll();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '审批失败')));
+            };
+
+            // ===== 报表（阶段7）=====
+            const reportDaily = ref([]);
+            const reportStock = ref([]);
+            const loadReports = () => {
+                axios.get(`${API_BASE}/report/daily`).then(res => reportDaily.value = res.data.data).catch(() => {});
+                axios.get(`${API_BASE}/report/stock-value`).then(res => reportStock.value = res.data.data).catch(() => {});
+            };
 
             // 计算属性：筛选商品
             const filteredProducts = computed(() => {
@@ -237,13 +577,16 @@
 
             // 加载方法
             const loadProducts = () => {
-                axios.get(`${API_BASE}/product/list`).then(res => products.value = res.data);
+                axios.get(`${API_BASE}/product/list`).then(res => products.value = res.data.data)
+                    .catch(() => ElementPlus.ElMessage.error('商品列表加载失败'));
             };
             const loadInboundList = () => {
-                axios.get(`${API_BASE}/inbound/list`).then(res => inboundList.value = res.data);
+                axios.get(`${API_BASE}/inbound/list`).then(res => inboundList.value = res.data.data)
+                    .catch(() => ElementPlus.ElMessage.error('入库记录加载失败'));
             };
             const loadOutboundList = () => {
-                axios.get(`${API_BASE}/outbound/list`).then(res => outboundList.value = res.data);
+                axios.get(`${API_BASE}/outbound/list`).then(res => outboundList.value = res.data.data)
+                    .catch(() => ElementPlus.ElMessage.error('出库记录加载失败'));
             };
 
             const refreshAll = () => {
@@ -253,12 +596,16 @@
             };
 
             // 操作方法
+            // 后端业务失败返回 HTTP 400 + { code, message }，统一走 .catch 提示
+            const errMsg = (err, fallback) =>
+                (err.response && err.response.data && err.response.data.message) || fallback;
+
             const handleAddProduct = () => {
                 axios.post(`${API_BASE}/product/add`, new URLSearchParams(newProduct.value)).then(res => {
-                    ElementPlus.ElMessage.success(res.data);
+                    ElementPlus.ElMessage.success(res.data.data);
                     addDialogVisible.value = false;
                     loadProducts();
-                });
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '新增失败')));
             };
 
             const openPriceDialog = (row) => {
@@ -269,35 +616,140 @@
 
             const handleUpdatePrice = () => {
                 axios.post(`${API_BASE}/product/updatePrice`, new URLSearchParams(updatePriceForm.value)).then(res => {
-                    ElementPlus.ElMessage.success(res.data);
+                    ElementPlus.ElMessage.success(res.data.data);
                     priceDialogVisible.value = false;
                     loadProducts();
-                });
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '更新失败')));
             };
 
             const handleInbound = () => {
                 axios.post(`${API_BASE}/inbound/create`, new URLSearchParams(inbound.value)).then(res => {
-                    ElementPlus.ElMessage.success(res.data);
+                    ElementPlus.ElMessage.success(res.data.data);
                     refreshAll();
-                });
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '入库失败')));
             };
 
             const handleOutbound = () => {
                 axios.post(`${API_BASE}/outbound/create`, new URLSearchParams(outbound.value)).then(res => {
-                    ElementPlus.ElMessage.success(res.data);
+                    ElementPlus.ElMessage.success(res.data.data);
                     refreshAll();
-                }).catch(err => ElementPlus.ElMessage.error('出库失败'));
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '出库失败')));
             };
 
             const handleDeduct = () => {
                 axios.post(`${API_BASE}/stock/deduct`, new URLSearchParams(deduct.value)).then(res => {
-                    ElementPlus.ElMessage.info(res.data);
+                    ElementPlus.ElMessage.success(res.data.data);
                     loadProducts();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '扣减失败')));
+            };
+
+            // ===== 当前用户 / 改密 / 退出 =====
+            const loadMe = () => {
+                axios.get(`${API_BASE}/auth/me`).then(res => {
+                    me.value = res.data.data;
+                    perms.value = res.data.data.permissions || [];
+                    if (me.value.needChangePwd) pwdDialogVisible.value = true;
                 });
+            };
+            const logout = () => {
+                localStorage.removeItem(TOKEN_KEY);
+                location.href = 'login.html';
+            };
+            const openPwdDialog = () => {
+                pwdForm.value = { oldPassword: '', newPassword: '', confirm: '' };
+                pwdDialogVisible.value = true;
+            };
+            const handleChangePwd = () => {
+                if (pwdForm.value.newPassword !== pwdForm.value.confirm) {
+                    ElementPlus.ElMessage.error('两次输入的新密码不一致');
+                    return;
+                }
+                axios.post(`${API_BASE}/auth/change-password`, new URLSearchParams(pwdForm.value)).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    pwdDialogVisible.value = false;
+                    logout();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '修改失败')));
+            };
+
+            // ===== 账号管理 =====
+            const statusName = (s) => s === 1 ? '正常' : (s === 0 ? '停用' : '锁定');
+            const statusTag = (s) => s === 1 ? 'success' : (s === 0 ? 'info' : 'danger');
+            const loadUsers = () => {
+                axios.get(`${API_BASE}/user/list`).then(res => users.value = res.data.data).catch(() => {});
+            };
+            const loadRolesDepts = () => {
+                axios.get(`${API_BASE}/role/list`).then(res => rolesAll.value = res.data.data).catch(() => {});
+                axios.get(`${API_BASE}/dept/list`).then(res => deptsAll.value = res.data.data).catch(() => {});
+            };
+            const openCreateUser = () => {
+                newUserForm.value = { username: '', password: '', realName: '', deptId: null, roleIds: [] };
+                userDialog.value = true;
+            };
+            const handleCreateUser = () => {
+                const f = newUserForm.value;
+                const params = new URLSearchParams();
+                params.append('username', f.username);
+                params.append('password', f.password);
+                params.append('realName', f.realName || '');
+                params.append('deptId', f.deptId);
+                f.roleIds.forEach(id => params.append('roleIds', id));
+                axios.post(`${API_BASE}/user/create`, params).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    userDialog.value = false;
+                    loadUsers();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '创建失败')));
+            };
+            const openAssign = (row) => {
+                axios.get(`${API_BASE}/user/${row.id}/roles`).then(res => {
+                    assignForm.value = { userId: row.id, username: row.username, roleIds: res.data.data };
+                    assignDialog.value = true;
+                });
+            };
+            const handleAssign = () => {
+                const f = assignForm.value;
+                const params = new URLSearchParams();
+                params.append('userId', f.userId);
+                f.roleIds.forEach(id => params.append('roleIds', id));
+                axios.post(`${API_BASE}/user/assign-roles`, params).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    assignDialog.value = false;
+                    loadUsers();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '更新失败')));
+            };
+            const openReset = (row) => {
+                resetForm.value = { userId: row.id, username: row.username, newPassword: '' };
+                resetDialog.value = true;
+            };
+            const handleReset = () => {
+                const f = resetForm.value;
+                axios.post(`${API_BASE}/user/reset-password`,
+                    new URLSearchParams({ userId: f.userId, newPassword: f.newPassword })).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    resetDialog.value = false;
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '重置失败')));
+            };
+            const toggleStatus = (row) => {
+                const target = row.status === 1 ? 0 : 1;
+                axios.post(`${API_BASE}/user/status`,
+                    new URLSearchParams({ userId: row.id, status: target })).then(res => {
+                    ElementPlus.ElMessage.success(res.data.data);
+                    loadUsers();
+                }).catch(err => ElementPlus.ElMessage.error(errMsg(err, '操作失败')));
+            };
+
+            // ===== 审计日志 =====
+            const loadAudits = () => {
+                axios.get(`${API_BASE}/audit/list?limit=100`).then(res => audits.value = res.data.data).catch(() => {});
             };
 
             onMounted(() => {
+                loadMe();
                 refreshAll();
+                loadRolesDepts();
+                loadUsers();
+                loadAudits();
+                loadPending();
+                loadReports();
             });
 
             return {
@@ -306,7 +758,14 @@
                 filteredProducts, filteredInboundList, filteredOutboundList,
                 addDialogVisible, priceDialogVisible, newProduct, updatePriceForm,
                 inbound, outbound, deduct, loadProducts, loadInboundList, loadOutboundList,
-                handleAddProduct, openPriceDialog, handleUpdatePrice, handleInbound, handleOutbound, handleDeduct
+                handleAddProduct, openPriceDialog, handleUpdatePrice, handleInbound, handleOutbound, handleDeduct,
+                me, can, dataScopeName, logout, openPwdDialog, pwdDialogVisible, pwdForm, handleChangePwd,
+                users, rolesAll, deptsAll, userDialog, newUserForm, assignDialog, assignForm,
+                resetDialog, resetForm, openCreateUser, handleCreateUser, openAssign, handleAssign,
+                openReset, handleReset, toggleStatus, statusName, statusTag, loadUsers, loadAudits, audits,
+                docStatusName, docStatusTag, canCancel, cancelDoc, pendingDocs, loadPending,
+                auditDialogVisible, auditForm, openAudit, handleAudit,
+                reportDaily, reportStock, loadReports
             };
         }
     }).use(ElementPlus).mount('#app');

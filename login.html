@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>登录 - 轻量级 ERP 管理系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css"/>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f5f7fa; }
+        .login-box {
+            width: 360px; margin: 120px auto 0; padding: 30px 30px 20px;
+            background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+        }
+        .login-box h2 { text-align: center; margin: 0 0 24px; font-size: 20px; color: #303133; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="login-box">
+        <h2>轻量级 ERP 管理系统</h2>
+        <el-form label-width="70px">
+            <el-form-item label="用户名"><el-input v-model="form.username" placeholder="用户名" @keyup.enter="doLogin"></el-input></el-form-item>
+            <el-form-item label="密码"><el-input v-model="form.password" type="password" show-password placeholder="密码" @keyup.enter="doLogin"></el-input></el-form-item>
+            <el-button type="primary" style="width: 100%;" :loading="loading" @click="doLogin">登 录</el-button>
+        </el-form>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref } = Vue;
+    // 与 index.html 同一策略：file:// 直开时直连本地后端，托管部署时走同源
+    const API_BASE = location.protocol === 'file:' ? 'http://localhost:8080' : '';
+
+    createApp({
+        setup() {
+            const form = ref({ username: '', password: '' });
+            const loading = ref(false);
+
+            const doLogin = () => {
+                if (!form.value.username || !form.value.password) {
+                    ElementPlus.ElMessage.warning('请输入用户名和密码');
+                    return;
+                }
+                loading.value = true;
+                axios.post(`${API_BASE}/auth/login`, new URLSearchParams(form.value)).then(res => {
+                    localStorage.setItem('erp_token', res.data.data.token);
+                    localStorage.setItem('erp_user', res.data.data.realName);
+                    location.href = 'index.html';
+                }).catch(err => {
+                    loading.value = false;
+                    const msg = (err.response && err.response.data && err.response.data.message) || '登录失败';
+                    ElementPlus.ElMessage.error(msg);
+                });
+            };
+
+            return { form, loading, doLogin };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

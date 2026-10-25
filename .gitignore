@@ -31,3 +31,19 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### ERP 部署产物 ###
+# 数据库密码等环境变量(参考 .env.example)
+.env
+# deploy.sh / backup.sh 产生的数据库备份
+backups/
+# 巡检与对账定时任务日志
+logs/
+# 求职内部材料(面试说明),不进公开仓库
+INTERVIEW.md
+
+### 测试代码(按需本地保留,不入库)
+src/test/
+
+### Mimosa 扫描缓存
+.mimosa/

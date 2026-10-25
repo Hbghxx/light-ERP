@@ -1,5 +1,6 @@
 package com.example.erp.service;
 
+import com.example.erp.common.BusinessException;
 import com.example.erp.entity.ProductInfo;
 import com.example.erp.mapper.InventoryStockMapper;
 import com.example.erp.mapper.ProductInfoMapper;
@@ -24,20 +25,37 @@ public class ProductService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void addProduct(String sku, String name, BigDecimal price) {
-        // 1. 校验 SKU 是否已存在
-        ProductInfo existProduct = productInfoMapper.selectBySku(sku);
-        if (existProduct != null) {
-            throw new RuntimeException("商品 SKU [" + sku + "] 已存在");
+        // 1. 前置参数校验
+        if (sku == null || sku.trim().isEmpty()) {
+            throw new IllegalArgumentException("商品 SKU 不能为空");
+        }
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("商品名称不能为空");
+        }
+        if (price == null || price.signum() < 0) {
+            throw new IllegalArgumentException("基础售价不能为负数");
+        }
+        if (sku.length() > 50) {
+            throw new IllegalArgumentException("商品 SKU 不能超过 50 个字符");
+        }
+        if (name.length() > 100) {
+            throw new IllegalArgumentException("商品名称不能超过 100 个字符");
         }
 
-        // 2. 插入商品主数据
+        // 2. 校验 SKU 是否已存在
+        ProductInfo existProduct = productInfoMapper.selectBySku(sku);
+        if (existProduct != null) {
+            throw new BusinessException("商品 SKU [" + sku + "] 已存在");
+        }
+
+        // 3. 插入商品主数据
         ProductInfo product = new ProductInfo();
         product.setSku(sku);
         product.setName(name);
         product.setPrice(price);
         productInfoMapper.insert(product);
 
-        // 3. 自动初始化库存记录（初始库存为 0）
+        // 4. 自动初始化库存记录（初始库存为 0）
         inventoryStockMapper.insertStock(sku, 0);
     }
 
@@ -52,9 +70,12 @@ public class ProductService {
      * 修改商品基础售价
      */
     public void updatePrice(String sku, BigDecimal price) {
+        if (price == null || price.signum() < 0) {
+            throw new IllegalArgumentException("基础售价不能为负数");
+        }
         ProductInfo product = productInfoMapper.selectBySku(sku);
         if (product == null) {
-            throw new RuntimeException("商品 SKU [" + sku + "] 不存在");
+            throw new BusinessException("商品 SKU [" + sku + "] 不存在");
         }
         productInfoMapper.updatePrice(sku, price);
     }

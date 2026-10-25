@@ -1,5 +1,7 @@
 package com.example.erp.controller;
 
+import com.example.erp.common.RequiresPermission;
+import com.example.erp.common.Result;
 import com.example.erp.entity.ProductInfo;
 import com.example.erp.service.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,36 +21,30 @@ public class ProductController {
      * 1. 新增商品接口
      */
     @PostMapping("/add")
-    public String addProduct(@RequestParam String sku,
-                             @RequestParam String name,
-                             @RequestParam BigDecimal price) {
-        try {
-            productService.addProduct(sku, name, price);
-            return "商品新增成功！";
-        } catch (Exception e) {
-            return "新增失败：" + e.getMessage();
-        }
+    @RequiresPermission("product:add")
+    public Result<String> addProduct(@RequestParam String sku,
+                                     @RequestParam String name,
+                                     @RequestParam BigDecimal price) {
+        productService.addProduct(sku, name, price);
+        return Result.ok("商品新增成功");
     }
 
     /**
      * 2. 查询商品列表接口
      */
     @GetMapping("/list")
-    public List<ProductInfo> listProducts() {
-        return productService.listProducts();
+    public Result<List<ProductInfo>> listProducts() {
+        return Result.ok(productService.listProducts());
     }
 
     /**
      * 3. 修改商品价格接口
      */
     @PostMapping("/updatePrice")
-    public String updatePrice(@RequestParam String sku,
-                              @RequestParam BigDecimal price) {
-        try {
-            productService.updatePrice(sku, price);
-            return "价格更新成功！";
-        } catch (Exception e) {
-            return "更新失败：" + e.getMessage();
-        }
+    @RequiresPermission("product:price:update")
+    public Result<String> updatePrice(@RequestParam String sku,
+                                      @RequestParam BigDecimal price) {
+        productService.updatePrice(sku, price);
+        return Result.ok("价格更新成功");
     }
 }

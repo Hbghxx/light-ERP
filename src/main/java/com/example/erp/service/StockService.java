@@ -15,6 +15,14 @@ public class StockService {
      * 乐观锁扣减库存（不加 @Transactional，保证每次重试查询最新数据库快照）
      */
     public boolean deductStock(String sku, Integer qty) {
+        // 非正数会让条件更新放大库存（stock_qty >= 负数恒成立），必须拦截
+        if (sku == null || sku.trim().isEmpty()) {
+            throw new IllegalArgumentException("商品 SKU 不能为空");
+        }
+        if (qty == null || qty <= 0) {
+            throw new IllegalArgumentException("扣减数量必须大于 0");
+        }
+
         int maxRetries = 3;
 
         for (int i = 0; i < maxRetries; i++) {

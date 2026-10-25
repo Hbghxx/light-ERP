@@ -20,10 +20,19 @@ public interface InventoryStockMapper {
                             @Param("version") Integer version);
 
     /**
-     * 新增：采购入库增加库存
+     * 原子条件扣减：仅当库存充足时更新，无需版本号（供出库事务内调用，天然防超卖）。
+     * 同步递增 version：任何库存变动都推进行版本，保证乐观锁语义不被污染。
      */
     @Update("UPDATE inventory_stock " +
-            "SET stock_qty = stock_qty + #{qty} " +
+            "SET stock_qty = stock_qty - #{qty}, version = version + 1 " +
+            "WHERE product_sku = #{productSku} AND stock_qty >= #{qty}")
+    int reduceStockIfEnough(@Param("productSku") String productSku, @Param("qty") Integer qty);
+
+    /**
+     * 采购入库增加库存（同步递增 version，理由同上）
+     */
+    @Update("UPDATE inventory_stock " +
+            "SET stock_qty = stock_qty + #{qty}, version = version + 1 " +
             "WHERE product_sku = #{productSku}")
     int increaseStock(@Param("productSku") String productSku, @Param("qty") Integer qty);
 

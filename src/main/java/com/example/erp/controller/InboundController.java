@@ -1,12 +1,13 @@
 package com.example.erp.controller;
 
+import com.example.erp.common.RequiresPermission;
+import com.example.erp.common.Result;
 import com.example.erp.entity.PurchaseInbound;
 import com.example.erp.service.InboundService;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/inbound")
@@ -20,22 +21,45 @@ public class InboundController {
         this.inboundService = inboundService;
     }
 
+    /**
+     * 提交采购入库单（阶段6: 待审批,金额<审批线自动入账）
+     */
     @PostMapping("/create")
-    public ResponseEntity<String> createInbound(@RequestParam String sku,
-                                                @RequestParam Integer qty,
-                                                @RequestParam(required = false) String supplierName) {
-        try {
-            inboundService.executeInbound(sku, qty, supplierName);
-            return ResponseEntity.ok("采购入库成功！");
-        } catch (Exception e) {
-            // 返回 400 BAD_REQUEST 状态码，促发前端 axios 的 .catch 回调渲染错误消息
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(e.getMessage());
-        }
+    @RequiresPermission("inbound:create")
+    public Result<String> createInbound(@RequestParam String sku,
+                                        @RequestParam Integer qty,
+                                        @RequestParam(required = false) String supplierName) {
+        Map<String, Object> r = inboundService.submitInbound(sku, qty, supplierName);
+        boolean auto = Boolean.TRUE.equals(r.get("autoPassed"));
+        return Result.ok(auto ? "入库单已自动通过并入账" : "入库单已提交，等待审批");
     }
 
     @GetMapping("/list")
-    public ResponseEntity<List<PurchaseInbound>> listInbound() {
-        return ResponseEntity.ok(inboundService.listInbound());
+    public Result<List<PurchaseInbound>> listInbound() {
+        return Result.ok(inboundService.listInbound());
+    }
+
+    /** 审批（通过/驳回）：需入库审批权限，制单人不能审批自己的单据 */
+    @PostMapping("/audit")
+    @RequiresPermission("inbound:audit")
+    public Result<String> audit(@RequestParam Long docId,
+                                @RequestParam boolean approved,
+                                @RequestParam(required = false) String opinion) {
+        inboundService.auditInbound(docId, approved, opinion);
+        return Result.ok(approved ? "审批通过，已入账" : "已驳回");
+    }
+
+    /** 作废待审批单据（制单人本人或管理员） */
+    @PostMapping("/cancel")
+    public Result<String> cancel(@RequestParam Long docId) {
+        inboundService.cancelInbound(docId);
+        return Result.ok("单据已作废");
+    }
+
+    /** 待审批单据（审批中心用） */
+    @GetMapping("/pending")
+    @RequiresPermission("inbound:audit")
+    public Result<List<PurchaseInbound>> pending() {
+        return Result.ok(inboundService.listPending());
     }
 }

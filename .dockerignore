@@ -1,0 +1,15 @@
+# 缩小构建上下文：只保留 pom.xml 与 src/ 参与镜像构建
+target/
+.git/
+.idea/
+.mimosa/
+.mvn/
+docs/
+nginx/
+*.iml
+*.log
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+index.html
